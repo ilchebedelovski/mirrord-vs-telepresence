@@ -1,0 +1,13 @@
+{
+  "name": "nodejs-example",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:metalbear-co/nodejs-example.git",
+  "author": "MetalBear <hi@metalbear.co>",
+  "license": "MIT",
+  "workspaces": [
+    "auditor",
+    "blog"
+  ],
+  "private": true
+}

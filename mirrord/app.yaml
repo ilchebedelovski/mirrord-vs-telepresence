@@ -1,0 +1,234 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-auditor
+  labels:
+    app: example-auditor
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+  selector:
+    app: example-auditor
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-blog
+  labels:
+    app: example-blog
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app: example-blog
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-idp
+  labels:
+    app: example-idp
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 5556
+      targetPort: http
+  selector:
+    app: example-idp
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-pg
+  labels:
+    app: example-pg
+spec:
+  type: ClusterIP
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: pg
+  selector:
+    app: example-pg
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-blog
+  labels:
+    app: example-blog
+spec:
+  selector:
+    matchLabels:
+      app: example-blog
+  template:
+    metadata:
+      labels:
+        app: example-blog
+    spec:
+      containers:
+        - name: example-blog
+          image: ghcr.io/metalbear-co/nodejs-example-blog
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PORT
+              value: '8080'
+            - name: OIDC_ISSUER
+              value: http://example-idp:5556/oidc/
+            - name: OIDC_CLIENT_ID
+              value: example-blog
+            - name: OIDC_CLIENT_SECRET
+              value: example-blog-secret
+            - name: OIDC_REDIRECT_URI
+              value: http://localhost:8080/api/callback
+            - name: PG_CONNECTION
+              value: postgresql://postgres:example@example-pg/blog?sslmode=disable
+            - name: AUDITOR_ADDRESS
+              value: http://example-auditor:3000
+          imagePullPolicy: IfNotPresent
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-auditor
+  labels:
+    app: example-auditor
+spec:
+  selector:
+    matchLabels:
+      app: example-auditor
+  template:
+    metadata:
+      labels:
+        app: example-auditor
+    spec:
+      containers:
+        - name: example-auditor
+          image: ghcr.io/metalbear-co/nodejs-example-auditor
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: '3000'
+          imagePullPolicy: IfNotPresent
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-pg
+  labels:
+    app: example-pg
+spec:
+  selector:
+    matchLabels:
+      app: example-pg
+  template:
+    metadata:
+      labels:
+        app: example-pg
+    spec:
+      containers:
+        - name: example-pg
+          image: postgres:14
+          ports:
+            - name: pg
+              containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              value: example
+          imagePullPolicy: IfNotPresent
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-idp
+  labels:
+    app: example-idp
+spec:
+  selector:
+    matchLabels:
+      app: example-idp
+  template:
+    metadata:
+      labels:
+        app: example-idp
+    spec:
+      containers:
+        - name: example-idp
+          image: dexidp/dex:v2.33.1
+          ports:
+            - name: http
+              containerPort: 5556
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+          - name: config
+            mountPath: "/etc/dex"
+            readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: example-idp
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-idp
+data:
+  config.docker.yaml: |
+    issuer: http://example-idp:5556/oidc
+
+    storage:
+      type: postgres
+      config:
+        host: example-pg
+        port: 5432
+        database: dex
+        user: postgres
+        password: example
+        ssl:
+          mode: disable
+
+    staticClients:
+    - id: local-example-blog
+      secret: local-example-blog-secret
+      name: 'Blog'
+      public: false
+      redirectURIs:
+      - 'http://localhost:3000/api/callback'
+    - id: example-blog
+      secret: example-blog-secret
+      name: 'Blog'
+      public: false
+      redirectURIs:
+      - 'http://localhost:8080/api/callback'
+
+    web:
+      http: 0.0.0.0:5556
+
+    enablePasswordDB: true
+
+    staticPasswords:
+    - email: "admin@example.com"
+      # bcrypt hash of the string "password"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "admin"
+      userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
